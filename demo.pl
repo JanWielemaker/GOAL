@@ -1,4 +1,4 @@
-:- use_module(interp).
+:- use_module(goal).
 
 :- use bwknowledge as knowledge.
 :- use bwbeliefs as beliefs.
