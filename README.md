@@ -13,8 +13,9 @@ Run as
 
     swipl demo.pl
 
-Useful goals:
+Some useful goals (see goal.pl for more):
 
+| Command | Description |
 |---|---|
 | ?- beliefs. | List all beliefs   |
 | ?- goals.   | List all goals     |
