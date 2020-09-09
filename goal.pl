@@ -2,6 +2,7 @@
           [ (use)/1,                    % use +File as +Type
             bel/1,                      % Query
             goal/1,                     % Query
+            a_goal/1,                   % Query
 
             op(800, fx, use)
           ]).
@@ -13,6 +14,11 @@
 
 :- thread_local
     knowledge/1.
+
+%!  use(+Spec) is det.
+%
+%   Spec is of the shape `File as Type`. Loads File as data of Type for
+%   the current agent.
 
 use File as knowledge :-
     !,
@@ -40,6 +46,10 @@ use _ as Type :-
 assert_goal(Module, Goal) :-
     assertz(Module:goal(Goal)).
 
+%!  bel(+Qry)
+%
+%   True when agent believes Qry to be true.
+
 bel(Qry) :-
     knowledge(Module),
     setup_call_cleanup(
@@ -47,12 +57,20 @@ bel(Qry) :-
         Module:Qry,
         b_setval('GOAL_mode', [])).
 
+%!  goal(+Qry)
+%
+%   True when Qry is part of one of the agent's goals.
+
 goal(Qry) :-
     knowledge(Module),
     setup_call_cleanup(
         b_setval('GOAL_mode', goal),
         Module:Qry,
         b_setval('GOAL_mode', [])).
+
+a_goal(Qry) :-
+    goal(Qry),
+    not(bel(Qry)).
 
 :- public
     bg_call/2,
