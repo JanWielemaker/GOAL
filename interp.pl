@@ -8,6 +8,8 @@
 :- use_module(library(apply)).
 :- use_module(library(prolog_code)).
 :- use_module(library(readutil)).
+:- use_module(library(error)).
+:- use_module(library(lists)).
 
 :- thread_local
     knowledge/1.
@@ -25,16 +27,25 @@ use File as beliefs :-
     ensure_loaded(Module:File).
 use File as goals :-
     !,
-    read_file_to_terms(File, Goals, []),
+    absolute_file_name(File, Path,
+                       [ file_type(prolog),
+                         access(read)
+                       ]),
+    read_file_to_terms(Path, Goals, []),
     knowledge(Module),
     maplist(assert_goal(Module), Goals).
+use _ as Type :-
+    domain_error(goal_file_type, Type).
 
 assert_goal(Module, Goal) :-
     assertz(Module:goal(Goal)).
 
 bel(Qry) :-
     knowledge(Module),
-    call(Module:Qry).
+    setup_call_cleanup(
+        b_setval('GOAL_mode', believe),
+        Module:Qry,
+        b_setval('GOAL_mode', [])).
 
 goal(Qry) :-
     knowledge(Module),
