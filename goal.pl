@@ -10,6 +10,9 @@
             insert/1,                   % +Beliefs
             delete/1,                   % +Beliefs
 
+            beliefs/0,                  % List beliefs
+            goals/0,                    % List goals
+
             step/1,                     % ?Id
 
             op(800,  fx, use),          % use +File as +Type
@@ -63,7 +66,7 @@ use File as actionspec :-
                          access(read)
                        ]),
     read_file_to_terms(Path, Actions, [module(goal)]),
-    agent_module(actionspec, File),
+    asserta(agent_module(actionspec, File)),
     maplist(assert_action, Actions).
 use _ as Type :-
     domain_error(goal_file_type, Type).
@@ -197,6 +200,53 @@ delete_fact(Qry) :-
 
 
 		 /*******************************
+		 *            STATE		*
+		 *******************************/
+
+beliefs :-
+    dynamics(Goals),
+    beliefs(Goals).
+
+dynamics(Goals) :-
+    agent_module(knowledge, Module),
+    findall(Goal,
+            ( predicate_property(Module:Goal, thread_local),
+              \+ predicate_property(Module:Goal, imported_from(_))
+            ),
+            Goals).
+
+beliefs([]).
+beliefs([H|T]) :-
+    forall(bel(H),
+           portray_clause(H)),
+    (   T == []
+    ->  true
+    ;   nl,
+        beliefs(T)
+    ).
+
+goals :-
+    findall(Id, goal_id(Id), Ids),
+    list_goals(Ids, 1).
+
+list_goals([], _).
+list_goals([H|T], I) :-
+    format('% Goal ~w~n', [I]),
+    list_goal(H),
+    (   T == []
+    ->  true
+    ;   nl,
+        I2 is I + 1,
+        list_goals(T, I2)
+    ).
+
+list_goal(Id) :-
+    findall(Fact, goal_fact(Id,Fact), Facts),
+    comma_list(Conj, Facts),
+    portray_clause(Conj).
+
+
+		 /*******************************
 		 *           ACTIONSPEC		*
 		 *******************************/
 
@@ -206,16 +256,19 @@ delete_fact(Qry) :-
 
 assert_action(use _Module as knowledge) :-
     !.
-assert_action(define Id with pre Pre post Post) :-
+assert_action(define Id with pre {Pre} post {Post}) :-
+    !,
     agent_module(actionspec, Module),
     assertz(Module:action(Id, Pre, Post)).
+assert_action(Action) :-
+    domain_error('GOAL_action', Action).
 
 %!  step(?Id) is semidet.
 
 step(Id) :-
     agent_module(actionspec, Module),
     Module:action(Id, Pre, Post),
-    belief(Pre),
+    bel(Pre),
     !,
     insert(Post),
     !.
