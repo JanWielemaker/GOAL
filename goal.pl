@@ -5,16 +5,33 @@
             a_goal/1,                   % Query
             goal_a/1,                   % Query
 
-            op(800, fx, use)
+            adopt/1,                    % Goal
+            drop/1,                     % Query
+            insert/1,                   % +Beliefs
+            delete/1,                   % +Beliefs
+
+            step/1,                     % ?Id
+
+            op(800,  fx, use),          % use +File as +Type
+            op(800,  fx, define),
+            op(700, xfx, with),
+            op(100,  fx, pre),
+            op(100, yfx, post)
           ]).
 :- use_module(library(apply)).
 :- use_module(library(prolog_code)).
 :- use_module(library(readutil)).
 :- use_module(library(error)).
-:- use_module(library(lists)).
 
 :- thread_local
-    knowledge/1.
+    agent_module/2,                     % ?Role, ?Module
+    goal_id/1,                          % Id
+    goal_fact/2.                        % Id, Fact
+
+
+		 /*******************************
+		 *         DEFINE AGENT		*
+		 *******************************/
 
 %!  use(+Spec) is det.
 %
@@ -26,11 +43,10 @@ use File as knowledge :-
     context_module(Me),
     assertz(File:term_expansion(In,Out) :- Me:'GOAL_expansion'(In,Out)),
     ensure_loaded(File:File),
-    asserta(knowledge(File)),
-    thread_local(File:goal/1).
+    asserta(agent_module(knowledge, File)).
 use File as beliefs :-
     !,
-    knowledge(Module),
+    agent_module(knowledge, Module),
     ensure_loaded(Module:File).
 use File as goals :-
     !,
@@ -39,20 +55,30 @@ use File as goals :-
                          access(read)
                        ]),
     read_file_to_terms(Path, Goals, []),
-    knowledge(Module),
-    maplist(assert_goal(Module), Goals).
+    maplist(adopt, Goals).
+use File as actionspec :-
+    !,
+    absolute_file_name(File, Path,
+                       [ extensions([pl,act2g]),
+                         access(read)
+                       ]),
+    read_file_to_terms(Path, Actions, [module(goal)]),
+    agent_module(actionspec, File),
+    maplist(assert_action, Actions).
 use _ as Type :-
     domain_error(goal_file_type, Type).
 
-assert_goal(Module, Goal) :-
-    assertz(Module:goal(Goal)).
+
+		 /*******************************
+		 *   QUERY BELIEFS AND FACTS	*
+		 *******************************/
 
 %!  bel(+Qry)
 %
 %   True when agent believes Qry to be true.
 
 bel(Qry) :-
-    knowledge(Module),
+    agent_module(knowledge, Module),
     setup_call_cleanup(
         b_setval('GOAL_mode', believe),
         Module:Qry,
@@ -63,9 +89,12 @@ bel(Qry) :-
 %   True when Qry is part of one of the agent's goals.
 
 goal(Qry) :-
-    knowledge(Module),
+    goal(Qry, _).
+goal(Qry, Id) :-
+    agent_module(knowledge, Module),
+    goal_id(Id),
     setup_call_cleanup(
-        b_setval('GOAL_mode', goal),
+        b_setval('GOAL_mode', goal(Id)),
         Module:Qry,
         b_setval('GOAL_mode', [])).
 
@@ -77,17 +106,134 @@ goal_a(Qry) :-
     goal(Qry),
     bel(Qry).
 
+
+		 /*******************************
+		 *        UPDATE ACTIONS	*
+		 *******************************/
+
+%!  adopt(+Goal)
+%
+%   Add a goal to the agent's goals.
+%
+%   @tbd Goal should not be  believed  and   should  not  be subsumed by
+%   another goal.
+
+adopt(Goal) :-
+    variant_sha1(Goal, Id),
+    comma_list(Goal, Facts),
+    maplist(adopt_fact(Id), Facts).
+
+adopt_fact(_Id, Fact) :-
+    var(Fact),
+    !,
+    instantiation_error(Fact).
+adopt_fact(_Id, not(Fact)) :-
+    !,
+    domain_error(positive_literal, not(Fact)).
+adopt_fact(Id, Fact) :-
+    (   goal_id(Id)
+    ->  true
+    ;   assertz(goal_id(Id))
+    ),
+    assertz(goal_fact(Id, Fact)).
+
+%!  drop(+Goal)
+
+drop(Qry) :-
+    forall(goal(Qry, Id),
+           drop_id(Id)).
+
+drop_id(Id) :-
+    retractall(goal_id(Id)),
+    retractall(goal_fact(Id, _)).
+
+%!  insert(+Udp)
+
+insert(Udp) :-
+    comma_list(Udp, Literals),
+    maplist(insert_fact, Literals).
+
+insert_fact(Var) :-
+    var(Var),
+    !,
+    instantiation_error(Var).
+insert_fact(not(Qry)) :-
+    !,
+    agent_module(knowledge, Module),
+    belief(Module:Qry),
+    retractall(Module:Qry).
+insert_fact(Qry) :-
+    agent_module(knowledge, Module),
+    belief(Module:Qry),
+    assertz(Module:Qry).
+
+belief(Module:Qry) :-
+    predicate_property(Module:Qry, thread_local),
+    !.
+belief(_:Qry) :-
+    type_error(belief, Qry).
+
+%!  delete(+Udp)
+%
+%   Inverse of insert/1.
+
+delete(Udp) :-
+    comma_list(Udp, Literals),
+    maplist(delete_fact, Literals).
+
+delete_fact(Var) :-
+    var(Var),
+    !,
+    instantiation_error(Var).
+delete_fact(not(Qry)) :-
+    !,
+    agent_module(knowledge, Module),
+    belief(Module:Qry),
+    assertz(Module:Qry).
+delete_fact(Qry) :-
+    agent_module(knowledge, Module),
+    belief(Module:Qry),
+    retractall(Module:Qry).
+
+
+		 /*******************************
+		 *           ACTIONSPEC		*
+		 *******************************/
+
+%!  assert_action(+Action)
+%
+%
+
+assert_action(use _Module as knowledge) :-
+    !.
+assert_action(define Id with pre Pre post Post) :-
+    agent_module(actionspec, Module),
+    assertz(Module:action(Id, Pre, Post)).
+
+%!  step(?Id) is semidet.
+
+step(Id) :-
+    agent_module(actionspec, Module),
+    Module:action(Id, Pre, Post),
+    belief(Pre),
+    !,
+    insert(Post),
+    !.
+
+
+
+		 /*******************************
+		 *      KNOWLEDGE REWRITE	*
+		 *******************************/
+
 :- public
     bg_call/2,
     'GOAL_expansion'/2.
 
 bg_call(_Wrapped, Head) :-
-    b_getval('GOAL_mode', goal),
+    b_getval('GOAL_mode', goal(Id)),
     !,
-    knowledge(Module),
-    Module:goal(Goal),
-    comma_list(Goal, Facts),
-    member(Head, Facts).
+    goal_fact(Id, Head).
 bg_call(Wrapped, _Head) :-
     call(Wrapped).
 

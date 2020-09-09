@@ -1,0 +1,5 @@
+use bwknowledge as knowledge.
+
+define move(X,Y) with
+    pre { clear(X), clear(Y), on(X,Z), not(on(X,Y)) }
+    post { not(on(X,Z)), on(X,Y) }.
