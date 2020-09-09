@@ -3,6 +3,7 @@
             bel/1,                      % Query
             goal/1,                     % Query
             a_goal/1,                   % Query
+            goal_a/1,                   % Query
 
             op(800, fx, use)
           ]).
@@ -71,6 +72,10 @@ goal(Qry) :-
 a_goal(Qry) :-
     goal(Qry),
     not(bel(Qry)).
+
+goal_a(Qry) :-
+    goal(Qry),
+    bel(Qry).
 
 :- public
     bg_call/2,
