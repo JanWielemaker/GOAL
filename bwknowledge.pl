@@ -1,5 +1,5 @@
 % Declaration of the on/2 predicate.
-:- thread_local on/2.
+:- dynamic on/2.
 % only blocks can be on top of another object.
 block(X) :- on(X, _).
 % the table is always clear.
