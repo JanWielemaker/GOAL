@@ -25,6 +25,8 @@
 :- use_module(library(prolog_code)).
 :- use_module(library(readutil)).
 :- use_module(library(error)).
+:- use_module(library(debug)).
+:- use_module(library(listing)).
 
 :- thread_local
     agent_module/2,                     % ?Role, ?Module
@@ -164,17 +166,11 @@ insert_fact(not(Qry)) :-
     !,
     agent_module(knowledge, Module),
     belief(Module:Qry),
-    retractall(Module:Qry).
+    drop_facts(Module, Qry).
 insert_fact(Qry) :-
     agent_module(knowledge, Module),
     belief(Module:Qry),
-    assertz(Module:Qry).
-
-belief(Module:Qry) :-
-    predicate_property(Module:Qry, thread_local),
-    !.
-belief(_:Qry) :-
-    type_error(belief, Qry).
+    insert_fact(Module, Qry).
 
 %!  delete(+Udp)
 %
@@ -192,11 +188,28 @@ delete_fact(not(Qry)) :-
     !,
     agent_module(knowledge, Module),
     belief(Module:Qry),
-    assertz(Module:Qry).
+    insert_fact(Module, Qry).
 delete_fact(Qry) :-
     agent_module(knowledge, Module),
     belief(Module:Qry),
-    retractall(Module:Qry).
+    drop_facts(Module, Qry).
+
+belief(Module:Qry) :-
+    predicate_property(Module:Qry, thread_local),
+    !.
+belief(_:Qry) :-
+    type_error(belief, Qry).
+
+insert_fact(Module, Fact) :-
+    debug(goal(update), 'Now I believe ~p', [Fact]),
+    assertz(Module:Fact).
+
+drop_facts(Module, Fact) :-
+    (   debugging(goal(update))
+    ->  forall(retract(Module:Fact),
+               debug(goal(update), 'I no longer believe ~p', [Fact]))
+    ;   retractall(Module:Fact)
+    ).
 
 
 		 /*******************************
