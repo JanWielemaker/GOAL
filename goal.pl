@@ -96,9 +96,14 @@ load_beliefs_from_string(String) :-
 %   If multiple modules define the same  predicate we add _link clauses_
 %   to the shared module trying the knowledge modules one-by-one.
 
+create_agent([Module], _Options) :-
+    !,
+    must_be(atom, Module),
+    asserta(agent_module(knowledge, Module)).
 create_agent(Knowledge, _Options) :-
     knowledge_module(Knowledge, Module),
-    asserta(agent_module(knowledge, Module)).
+    asserta(agent_module(knowledge, Module)),
+    asserta(agent_module(shared_knowledge, Module)).
 
 knowledge_module([Module], Module) :-
     !.
@@ -121,7 +126,14 @@ create_knowledge_module(Modules, Shared) :-
     forall(member(M, Modules),
            add_import_module(Shared, M, end)),
     import_shared_predicates(Shared, Modules),
+    declare_beliefs(Shared, Modules),
     asserta(Shared:'__GOAL_knowledge'(Modules)).
+
+%!  import_shared_predicates(+Shared, +Modules)
+%
+%   For every predicate that  is  defined   in  multiple  modules, add a
+%   predicate to Shared calling  each  of   the  knowledge  modules that
+%   defined this predicate.
 
 import_shared_predicates(Shared, Modules) :-
     maplist(defines, Modules, Defines),
@@ -136,13 +148,21 @@ defines(Module, PIs) :-
 
 defines1(Module, PI) :-
     current_predicate(Module:PI),
+    arg(1, PI, Name),
+    PI \== term_expansion/2,
+    \+ sub_atom(Name, 0, _, _, '$'),
+    \+ sub_atom(Name, 0, _, _, '__GOAL'),
     pi_head(PI, Head),
+    \+ Module:'__GOAL_belief'(Head),
     \+ predicate_property(Module:Head, imported_from(_)).
 
 from_multiple([], []).
 from_multiple([H,H|T0], [H|T]) :-
+    !,
     delete_leading(T0, H, T1),
     from_multiple(T1, T).
+from_multiple([_|T0], T) :-
+    from_multiple(T0, T).
 
 delete_leading(H, [H|T], L) :-
     !,
@@ -155,6 +175,23 @@ multi_import(Shared, Modules, PI) :-
              defines1(M, PI)
            ),
            assertz((Shared:Head :- M:Head))).
+
+%!  declare_beliefs(+Shared, +Modules)
+%
+%   Define the beliefs appearing in all Modules in Shared.
+
+declare_beliefs(Shared, Modules) :-
+    dynamic(Shared:'__GOAL_belief'/1),
+    (   member(M, Modules),
+        M:'__GOAL_belief'(Belief),
+        \+ Shared:'__GOAL_belief'(Belief),
+        pi_head(PI, Belief),
+        thread_local(Shared:PI),
+        assertz(Shared:'__GOAL_belief'(Belief)),
+        fail
+    ;   true
+    ),
+    compile_predicates([Shared:'__GOAL_belief'/1]).
 
 
 		 /*******************************
@@ -426,10 +463,16 @@ bg_call(_Wrapped, Head) :-
     b_getval('GOAL_mode', goal(Id)),
     !,
     goal_fact(Id, Head).
+bg_call(_Wrapped, Head) :-
+    agent_module(shared_knowledge, Module),
+    !,
+    call(Module:Head).
 bg_call(Wrapped, _Head) :-
     call(Wrapped).
 
-'GOAL_expansion'(begin_of_file, (:- discontiguous('__GOAL_belief'/1))).
+'GOAL_expansion'(begin_of_file,
+                 [ (:- discontiguous('__GOAL_belief'/1))
+                 ]).
 'GOAL_expansion'((:- dynamic(Spec)), Clauses) :-
     comma_list(Spec, PIs),
     maplist(state_pred, PIs, Clauses).
