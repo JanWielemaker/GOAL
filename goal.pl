@@ -15,9 +15,10 @@
 
             step/1,                     % ?Id
 
-            goal_load_knowledge_file/2, % +Module, +File
-            goal_load_knowledge_string/2, % +Module, +String
-            goal_load_beliefs/2,	% +Module, +String
+            load_knowledge_from_file/2, % +Module, +File
+            load_knowledge_from_string/2, % +Module, +String
+            load_beliefs_from_file/1,	% +File
+            load_beliefs_from_string/1,	% +String
             create_agent/2,             % +Knowledge:list(module),+Options
 
             op(800,  fx, use),          % use +File as +Type
@@ -44,19 +45,19 @@
 		 *           JAVA API		*
 		 *******************************/
 
-%!  goal_load_knowledge_file(+Module, +File)
-%!  goal_load_knowledge_string(+Module, +String)
+%!  load_knowledge_from_file(+Module, +File) is det.
+%!  load_knowledge_from_string(+Module, +String) is det.
 %
 %   Load source String into Module as a  GOAL knowledge entity. A loaded
 %   knowledge module is independent from agents, i.e., it may be used by
 %   any number (including zero) agents.
 
-goal_load_knowledge_file(Module, File) :-
+load_knowledge_from_file(Module, File) :-
     context_module(Me),
     assertz(Module:term_expansion(In,Out) :- Me:'GOAL_expansion'(In,Out)),
     ensure_loaded(Module:File).
 
-goal_load_knowledge_string(Module, String) :-
+load_knowledge_from_string(Module, String) :-
     context_module(Me),
     assertz(Module:term_expansion(In,Out) :- Me:'GOAL_expansion'(In,Out)),
     setup_call_cleanup(
@@ -64,12 +65,18 @@ goal_load_knowledge_string(Module, String) :-
         load_files(Module:Module, [if(true), stream(In)]),
         close(In)).
 
-%!  goal_load_beliefs(+Module, +String)
+%!  load_beliefs_from_file(+File) is det.
+%!  load_beliefs_from_string(+String) is det.
 %
 %   Load beliefs into the knowledge module Module as beliefs for the
 %   current agent.
 
-goal_load_beliefs(Module, String) :-
+load_beliefs_from_file(File) :-
+    agent_module(knowledge, Module),
+    ensure_loaded(Module:File).
+
+load_beliefs_from_string(String) :-
+    agent_module(knowledge, Module),
     setup_call_cleanup(
         open_string(String, In),
         load_files(Module:Module, [if(true), stream(In)]),
@@ -112,7 +119,7 @@ create_knowledge_module(Modules, Shared) :-
     forall(member(M, Modules),
            add_import_module(Shared, M, end)),
     import_shared_predicates(Shared, Modules),
-    asserta(Shared:'__GOAL_knowledge'/0).
+    asserta(Shared:'__GOAL_knowledge'(Modules)).
 
 import_shared_predicates(Shared, Modules) :-
     maplist(defines, Modules, Defines),
@@ -159,14 +166,11 @@ multi_import(Shared, Modules, PI) :-
 
 use File as knowledge :-
     !,
-    context_module(Me),
-    assertz(File:term_expansion(In,Out) :- Me:'GOAL_expansion'(In,Out)),
-    ensure_loaded(File:File),
+    load_knowledge_from_file(File, File),
     asserta(agent_module(knowledge, File)).
 use File as beliefs :-
     !,
-    agent_module(knowledge, Module),
-    ensure_loaded(Module:File).
+    load_beliefs_from_file(File).
 use File as goals :-
     !,
     absolute_file_name(File, Path,
