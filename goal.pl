@@ -34,6 +34,7 @@
 :- use_module(library(debug)).
 :- use_module(library(listing)).
 :- use_module(library(lists)).
+:- use_module(library(prolog_wrap), []).
 
 :- thread_local
     agent_module/2,                     % ?Role, ?Module
@@ -340,11 +341,7 @@ beliefs :-
 
 dynamics(Goals) :-
     agent_module(knowledge, Module),
-    findall(Goal,
-            ( predicate_property(Module:Goal, thread_local),
-              \+ predicate_property(Module:Goal, imported_from(_))
-            ),
-            Goals).
+    findall(Goal, Module:'__GOAL_belief'(Goal), Goals).
 
 beliefs([]).
 beliefs([H|T]) :-
@@ -421,13 +418,15 @@ bg_call(_Wrapped, Head) :-
 bg_call(Wrapped, _Head) :-
     call(Wrapped).
 
+'GOAL_expansion'(begin_of_file, (:- discontiguous('__GOAL_belief'/1))).
 'GOAL_expansion'((:- dynamic(Spec)), Clauses) :-
     comma_list(Spec, PIs),
     maplist(state_pred, PIs, Clauses).
 
 state_pred(PI, [ (:- thread_local(PI)),
                  (:- wrap_predicate(Head, 'GOAL', Wrapped,
-                                    Me:bg_call(Wrapped, Head)))
+                                    Me:bg_call(Wrapped, Head))),
+                 '__GOAL_belief'(Head)
                ]) :-
     pi_head(PI, Head),
     context_module(Me).
