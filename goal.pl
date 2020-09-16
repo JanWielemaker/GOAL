@@ -15,6 +15,11 @@
 
             step/1,                     % ?Id
 
+            goal_load_knowledge_file/2, % +Module, +File
+            goal_load_knowledge_string/2, % +Module, +String
+            goal_load_beliefs/2,	% +Module, +String
+            create_agent/2,             % +Knowledge:list(module),+Options
+
             op(800,  fx, use),          % use +File as +Type
             op(800,  fx, define),
             op(700, xfx, with),
@@ -27,11 +32,120 @@
 :- use_module(library(error)).
 :- use_module(library(debug)).
 :- use_module(library(listing)).
+:- use_module(library(lists)).
 
 :- thread_local
     agent_module/2,                     % ?Role, ?Module
     goal_id/1,                          % Id
     goal_fact/2.                        % Id, Fact
+
+
+		 /*******************************
+		 *           JAVA API		*
+		 *******************************/
+
+%!  goal_load_knowledge_file(+Module, +File)
+%!  goal_load_knowledge_string(+Module, +String)
+%
+%   Load source String into Module as a  GOAL knowledge entity. A loaded
+%   knowledge module is independent from agents, i.e., it may be used by
+%   any number (including zero) agents.
+
+goal_load_knowledge_file(Module, File) :-
+    context_module(Me),
+    assertz(Module:term_expansion(In,Out) :- Me:'GOAL_expansion'(In,Out)),
+    ensure_loaded(Module:File).
+
+goal_load_knowledge_string(Module, String) :-
+    context_module(Me),
+    assertz(Module:term_expansion(In,Out) :- Me:'GOAL_expansion'(In,Out)),
+    setup_call_cleanup(
+        open_string(String, In),
+        load_files(Module:Module, [if(true), stream(In)]),
+        close(In)).
+
+%!  goal_load_beliefs(+Module, +String)
+%
+%   Load beliefs into the knowledge module Module as beliefs for the
+%   current agent.
+
+goal_load_beliefs(Module, String) :-
+    setup_call_cleanup(
+        open_string(String, In),
+        load_files(Module:Module, [if(true), stream(In)]),
+        close(In)).
+
+%!  create_agent(+Knowledge:list(module), +Options) is det.
+%
+%   Initialise an agent from a list of   knowledge  modules. If only one
+%   module is given, this module  is   associated  with  the agent using
+%   agent_module/2. If multiple knowledge modules are  given we create a
+%   new module named as below that inherits from the given modules
+%
+%       'Module1&Module2&...ModuleN'
+%
+%   If multiple modules define the same  predicate we add _link clauses_
+%   to the shared module trying the knowledge modules one-by-one.
+
+create_agent(Knowledge, _Options) :-
+    knowledge_module(Knowledge, Module),
+    asserta(agent_module(knowledge, Module)).
+
+knowledge_module([Module], Module) :-
+    !.
+knowledge_module(Modules, Shared) :-
+    atomic_list_concat(Modules, '&', Shared),
+    (   is_shared_knowledge_module(Shared, Modules)
+    ->  true
+    ;   with_mutex('GOAL_knowledge', create_knowledge_module(Modules, Shared))
+    ).
+
+is_shared_knowledge_module(Shared, Modules) :-
+    current_predicate(Shared:'__GOAL_knowledge'/1),
+    \+ predicate_property(Shared:'__GOAL_knowledge'(_), imported_from(_)),
+    Shared:'__GOAL_knowledge'(Modules).
+
+create_knowledge_module(Modules, Shared) :-
+    is_shared_knowledge_module(Shared, Modules),
+    !.
+create_knowledge_module(Modules, Shared) :-
+    forall(member(M, Modules),
+           add_import_module(Shared, M, end)),
+    import_shared_predicates(Shared, Modules),
+    asserta(Shared:'__GOAL_knowledge'/0).
+
+import_shared_predicates(Shared, Modules) :-
+    maplist(defines, Modules, Defines),
+    append(Defines, AllDefines),
+    msort(AllDefines, Sorted),
+    from_multiple(Sorted, FromMultiple),
+    maplist(multi_import(Shared, Modules), FromMultiple).
+
+defines(Module, PIs) :-
+    findall(PI, defines1(Module, PI), PIs0),
+    sort(PIs0, PIs).
+
+defines1(Module, PI) :-
+    current_predicate(Module:PI),
+    pi_head(PI, Head),
+    \+ predicate_property(Module:Head, imported_from(_)).
+
+from_multiple([], []).
+from_multiple([H,H|T0], [H|T]) :-
+    delete_leading(T0, H, T1),
+    from_multiple(T1, T).
+
+delete_leading(H, [H|T], L) :-
+    !,
+    delete_leading(H, T, L).
+delete_leading(_, List, List).
+
+multi_import(Shared, Modules, PI) :-
+    pi_head(PI, Head),
+    forall(( member(M, Modules),
+             defines1(M, PI)
+           ),
+           assertz((Shared:Head :- M:Head))).
 
 
 		 /*******************************
