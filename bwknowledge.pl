@@ -9,6 +9,3 @@ clear(X) :- block(X), not( on(_, X) ).
 % the tower predicate holds for any stack of blocks that sits on the table.
 tower([X]) :- on(X, table).
 tower([X,Y| T]) :- on(X, Y), tower([Y|T]).
-
-above(X,Y) :- on(X,Y).
-above(X,Y) :- on(X,Z), above(Z,Y).
