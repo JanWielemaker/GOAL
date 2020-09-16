@@ -37,6 +37,7 @@
 :- use_module(library(prolog_wrap), []).
 
 :- thread_local
+    using_knowledge/1,                  % Module
     agent_module/2,                     % ?Role, ?Module
     goal_id/1,                          % Id
     goal_fact/2.                        % Id, Fact
@@ -168,12 +169,14 @@ multi_import(Shared, Modules, PI) :-
 use File as knowledge :-
     !,
     load_knowledge_from_file(File, File),
-    asserta(agent_module(knowledge, File)).
+    assertz(using_knowledge(File)).
 use File as beliefs :-
     !,
+    ensure_agent,
     load_beliefs_from_file(File).
 use File as goals :-
     !,
+    ensure_agent,
     absolute_file_name(File, Path,
                        [ file_type(prolog),
                          access(read)
@@ -182,6 +185,7 @@ use File as goals :-
     maplist(adopt, Goals).
 use File as actionspec :-
     !,
+    ensure_agent,
     absolute_file_name(File, Path,
                        [ extensions([pl,act2g]),
                          access(read)
@@ -191,6 +195,13 @@ use File as actionspec :-
     maplist(assert_action, Actions).
 use _ as Type :-
     domain_error(goal_file_type, Type).
+
+ensure_agent :-
+    agent_module(knowledge, _),
+    !.
+ensure_agent :-
+    findall(Module, using_knowledge(Module), Modules),
+    create_agent(Modules, []).
 
 
 		 /*******************************
